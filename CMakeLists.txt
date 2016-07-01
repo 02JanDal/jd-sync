@@ -17,6 +17,8 @@ if(WEBSOCKET_CONNECTION)
 	find_package(Qt5 REQUIRED COMPONENTS WebSockets)
 endif()
 
+find_package(Avahi)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 14)
@@ -27,6 +29,9 @@ include(Helpers)
 set(SRC_COMMON
 	TcpUtils.h
 	TcpUtils.cpp
+
+	3rdparty/avahi-qt/qt-watch.h
+	3rdparty/avahi-qt/qt-watch.cpp
 )
 prepend_to_list(SRC_COMMON src/jd-tablesync/common/)
 

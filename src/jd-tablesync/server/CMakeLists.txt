@@ -6,6 +6,9 @@ set(SRC_SERVER
 	ObjectWithId.h
 	SyncableList.h
 	SyncableList.cpp
+
+	ServiceAnnouncer.h
+	ServiceAnnouncer.cpp
 )
 
 set(EXTRA_SERVER_LIBS )
@@ -28,6 +31,7 @@ add_library(jd-tablesync-server ${SRC_SERVER})
 target_link_libraries(jd-tablesync-server
 	Qt5::Core ${EXTRA_SERVER_LIBS}
 	jd-util jd-tablesync-common
+	avahi-common avahi-client
 )
 target_include_directories(jd-tablesync-server PUBLIC
 	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
