@@ -7,12 +7,12 @@ void TcpUtils::writePacket(QTcpSocket *socket, const QByteArray &data)
 {
 	QDataStream str(socket);
 	str.setByteOrder(QDataStream::LittleEndian);
-	str << (quint32) data.size();
+	str << quint32(data.size());
 	socket->write(data);
 }
 QByteArray TcpUtils::readPacket(QTcpSocket *socket)
 {
-	while (socket->bytesAvailable() < sizeof(quint32))
+	while (quint64(socket->bytesAvailable()) < sizeof(quint32))
 	{
 		socket->waitForReadyRead(500);
 	}

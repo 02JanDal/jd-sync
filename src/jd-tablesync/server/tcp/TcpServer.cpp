@@ -17,7 +17,7 @@ public:
 protected:
 	void incomingConnection(qintptr handle)
 	{
-		TcpClientConnection *connection = new TcpClientConnection(handle);
+		TcpClientConnection *connection = new TcpClientConnection(handle, m_server->m_authentication);
 		QThread *thread = new QThread;
 		connection->moveToThread(thread);
 		connect(connection, &TcpClientConnection::destroyed, thread, [thread](){thread->exit();});
@@ -34,6 +34,11 @@ private:
 TcpServer::TcpServer(const QHostAddress &address, const quint16 port, QObject *parent)
 	: AbstractClientConnection(parent), m_address(address), m_port(port), m_server(new TcpServerImpl(this, this))
 {
+}
+
+void TcpServer::setAuthentication(const QString &data)
+{
+	m_authentication = data;
 }
 
 void TcpServer::ready()

@@ -1,6 +1,6 @@
 #include "SyncedList.h"
 
-#include "jd-util/Json.h"
+#include <jd-util/Json.h>
 
 static inline QJsonValue toJson(const QVariant &value)
 {

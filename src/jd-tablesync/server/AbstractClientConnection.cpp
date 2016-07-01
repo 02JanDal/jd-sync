@@ -9,7 +9,7 @@ AbstractClientConnection::AbstractClientConnection(QObject *parent)
 
 void AbstractClientConnection::receive(const QString &channel, const QString &cmd, const QJsonObject &data, const QUuid &replyTo)
 {
-	if (!m_channels.contains(channel) && !m_monitor)
+	if (!m_channels.contains(channel) && !m_monitor && channel != "general")
 	{
 		return;
 	}

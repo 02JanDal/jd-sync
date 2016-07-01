@@ -17,8 +17,6 @@ public:
 	virtual void consume(const QString &channel, const QString &cmd, const QJsonObject &data) = 0;
 	virtual void connectionEstablished() {}
 
-	QStringList channels() const { return m_channels; }
-
 protected:
 	friend class ServerConnection;
 	void subscribeTo(const QString &channel);

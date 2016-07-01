@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/AbstractClientConnection.h"
+#include "../AbstractClientConnection.h"
 
 class QTcpSocket;
 
@@ -8,7 +8,7 @@ class TcpClientConnection : public AbstractClientConnection
 {
 	Q_OBJECT
 public:
-	explicit TcpClientConnection(qintptr handle);
+	explicit TcpClientConnection(qintptr handle, const QString &auth);
 
 	Q_INVOKABLE void setup();
 
@@ -22,4 +22,7 @@ private slots:
 private:
 	qintptr m_handle;
 	QTcpSocket *m_socket;
+	QString m_auth;
+
+	QList<QJsonObject> m_inQueue, m_outQueue;
 };
