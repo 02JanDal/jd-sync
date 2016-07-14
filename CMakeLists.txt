@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(jd-tablesync)
+project(jd-sync)
 
 option(TCP_CONNECTION "Build with TCP connection support" ON)
 option(WEBSOCKET_CONNECTION "Build with WebSocket connection support" OFF)
 
 if(NOT TARGET jd-util)
+	message(STATUS "Including jd-util from jd-sync")
 	add_subdirectory(../jd-util ${CMAKE_CURRENT_BINARY_DIR}/jd-util)
 endif()
 
@@ -19,6 +20,8 @@ endif()
 
 find_package(Avahi)
 
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src/jd-sync)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_CXX_STANDARD 14)
@@ -26,28 +29,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(Helpers)
 
-set(SRC_COMMON
-	TcpUtils.h
-	TcpUtils.cpp
+add_subdirectory(src/jd-sync/common)
+add_subdirectory(src/jd-sync/server)
+add_subdirectory(src/jd-sync/client)
+add_subdirectory(src/jd-sync/gui)
 
-	3rdparty/avahi-qt/qt-watch.h
-	3rdparty/avahi-qt/qt-watch.cpp
-)
-prepend_to_list(SRC_COMMON src/jd-tablesync/common/)
-
-add_library(jd-tablesync-common ${SRC_COMMON})
-target_link_libraries(jd-tablesync-common Qt5::Core Qt5::Network jd-util)
-target_include_directories(jd-tablesync-common PUBLIC
-	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
-	$<INSTALL_INTERFACE:include>
-)
-
-add_subdirectory(src/jd-tablesync/client)
-add_subdirectory(src/jd-tablesync/server)
-
-install(TARGETS jd-tablesync-common EXPORT jd-tablesync DESTINATION lib)
 install(DIRECTORY src/ DESTINATION include FILES_MATCHING PATTERN "*.h")
-install(EXPORT jd-tablesync NAMESPACE jd_ DESTINATION lib/cmake)
+install(EXPORT jd-sync NAMESPACE jd_ DESTINATION lib/cmake)
 
 enable_testing()
 add_subdirectory(test)
