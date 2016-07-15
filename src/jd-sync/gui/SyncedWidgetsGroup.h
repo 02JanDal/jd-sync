@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QUuid>
 
 class SyncedList;
 class SyncedListModel;
@@ -22,7 +23,7 @@ class SyncedWidgetsGroup : public QObject
 {
 	Q_OBJECT
 	Q_PROPERTY(bool modified READ isModified NOTIFY modifiedChanged)
-	Q_PROPERTY(int id READ id WRITE setId NOTIFY idChanged)
+	Q_PROPERTY(QUuid id READ id WRITE setId NOTIFY idChanged)
 public:
 	explicit SyncedWidgetsGroup(SyncedList *list, QObject *parent = nullptr);
 	~SyncedWidgetsGroup();
@@ -30,7 +31,7 @@ public:
 	void registerButtons(QPushButton *saveBtn, QPushButton *resetBtn, QPushButton *discardBtn);
 	void setSelector(const QString &otherProperty, QComboBox *box);
 	void setSelector(const QString &otherProperty, QAbstractItemView *view);
-	void setSelector(const int id);
+	void setSelector(const QUuid &id);
 
 	void add(const QString &property, QLabel *label);
 	void add(const QString &property, QGroupBox *box);
@@ -46,11 +47,11 @@ public:
 	void setEnabled(const bool enabled);
 
 	bool isModified() const;
-	int id() const { return m_id; }
+	QUuid id() const { return m_id; }
 
 signals:
 	void modifiedChanged(const bool modified);
-	void idChanged(const int id);
+	void idChanged(const QUuid &id);
 
 	void discarded();
 	void committed();
@@ -60,17 +61,17 @@ public slots:
 	void commit();
 
 private slots:
-	void setId(const int id);
-	void setParentId(const int id);
+	void setId(const QUuid &id);
+	void setParentId(const QUuid &id);
 
-	void recordAdded(const int id);
-	void recordRemoved(const int id);
-	void recordChanged(const int id, const QString &property);
+	void recordAdded(const QUuid &id);
+	void recordRemoved(const QUuid &id);
+	void recordChanged(const QUuid &id, const QString &property);
 
 private:
 	SyncedList *m_list;
 	SyncedListModel *m_model;
-	int m_id = -1;
+	QUuid m_id;
 
 	// either m_selector or m_id should be used
 	QWidget *m_selector = nullptr;

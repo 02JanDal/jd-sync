@@ -116,7 +116,7 @@ FilterPart FilterPart::fromJson(const QJsonObject &obj)
 				);
 }
 
-QString FilterPart::toSql(QVector<QVariant> *parameters) const
+QString FilterPart::toSql(QVector<QPair<QString, QVariant> > *parameters) const
 {
 	QString sql = m_property + ' ';
 	if (m_negated) {
@@ -143,14 +143,16 @@ QString FilterPart::toSql(QVector<QVariant> *parameters) const
 
 	if (m_operation == InSet) {
 		sql += " (" + Functional::collection(QVector<QString>(m_value.toList().size(), "?")).join(',') + ')';
-		parameters->append(m_value.toList().toVector());
+		for (const QVariant &value : m_value.toList()) {
+			parameters->append(qMakePair(m_property, value));
+		}
 	} else if (m_operation == Like) {
 		sql += '?';
 		// TODO handle \* and escape % before replacing
-		parameters->append(m_value.toString().replace('*', '%'));
+		parameters->append(qMakePair(m_property, m_value.toString().replace('*', '%')));
 	} else {
 		sql += '?';
-		parameters->append(m_value);
+		parameters->append(qMakePair(m_property, m_value));
 	}
 	return sql;
 }
@@ -209,7 +211,7 @@ FilterGroup FilterGroup::fromJson(const QJsonObject &obj)
 				);
 }
 
-QString FilterGroup::toSql(QVector<QVariant> *parameters) const
+QString FilterGroup::toSql(QVector<QPair<QString, QVariant>> *parameters) const
 {
 	const QString joiner = m_operation == And ? " AND " : " OR ";
 	const QString negation = m_negated ? "NOT " : "";

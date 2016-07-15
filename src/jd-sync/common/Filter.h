@@ -32,7 +32,7 @@ public:
 	QJsonObject toJson() const;
 	static FilterPart fromJson(const QJsonObject &obj);
 
-	QString toSql(QVector<QVariant> *parameters) const;
+	QString toSql(QVector<QPair<QString, QVariant>> *parameters) const;
 
 private:
 	QString m_property;
@@ -66,7 +66,7 @@ public:
 	QJsonObject toJson() const;
 	static FilterGroup fromJson(const QJsonObject &obj);
 
-	QString toSql(QVector<QVariant> *parameters) const;
+	QString toSql(QVector<QPair<QString, QVariant>> *parameters) const;
 
 private:
 	QVector<FilterPart> m_parts;

@@ -15,22 +15,22 @@ SyncedList::SyncedList(MessageHub *hub, const QString &channel, const QSet<QStri
 	subscribeTo(channel);
 }
 
-QVariant SyncedList::get(const int id, const QString &property) const
+QVariant SyncedList::get(const QUuid &id, const QString &property) const
 {
 	return m_rows[id].value(property);
 }
-QVariantHash SyncedList::getAll(const int id) const
+QVariantHash SyncedList::getAll(const QUuid &id) const
 {
 	return m_rows[id];
 }
 
-void SyncedList::set(const int id, const QString &property, const QVariant &value)
+void SyncedList::set(const QUuid &id, const QString &property, const QVariant &value)
 {
 	if (get(id, property) != value) {
 		request(UpdateMessage(m_channel, m_channel, QVector<QJsonObject>() << QJsonObject({{"id", Json::toJson(id)}, {property, Json::toJson(value)}}))).send();
 	}
 }
-void SyncedList::set(const int id, const QVariantHash &properties)
+void SyncedList::set(const QUuid &id, const QVariantHash &properties)
 {
 	QVariantHash prop = properties;
 	prop.insert("id", id);
@@ -49,20 +49,20 @@ void SyncedList::add(const QVector<QVariantHash> &values)
 {
 	request(CreateMessage(m_channel, m_channel, Functional::map(values, QJsonObject::fromVariantHash))).send();
 }
-void SyncedList::remove(const int id)
+void SyncedList::remove(const QUuid &id)
 {
 	request(DeleteMessage(m_channel, m_channel, id)).send();
 }
-void SyncedList::remove(const QSet<int> &ids)
+void SyncedList::remove(const QSet<QUuid> &ids)
 {
-	request(DeleteMessage(m_channel, m_channel, Functional::map2<QVector<QVariant>>(ids, &QVariant::fromValue<int>))).send();
+	request(DeleteMessage(m_channel, m_channel, Functional::map2<QVector<QVariant>>(ids, &QVariant::fromValue<QUuid>))).send();
 }
 
-bool SyncedList::contains(const int id) const
+bool SyncedList::contains(const QUuid &id) const
 {
 	return m_rows.contains(id);
 }
-QList<int> SyncedList::indexes() const
+QList<QUuid> SyncedList::indexes() const
 {
 	return m_rows.keys();
 }
@@ -77,7 +77,7 @@ void SyncedList::fetchMore()
 {
 	throw NotImplementedException();
 }
-void SyncedList::refetch(const int id)
+void SyncedList::refetch(const QUuid &id)
 {
 	request(ReadMessage(m_channel, m_channel, id)).send();
 }
@@ -98,7 +98,7 @@ void SyncedList::receive(const Message &msg)
 	if (msg.channel() == m_channel) {
 		if (msg.isCreateReply()) {
 			for (const QJsonObject &row : msg.toCreateReply().items()) {
-				const int id = Json::ensureInteger(row, "id");
+				const QUuid id = Json::ensureUuid(row, "id");
 				m_rows.insert(id, row.toVariantHash());
 				emit added(id);
 			}
@@ -112,7 +112,7 @@ void SyncedList::receive(const Message &msg)
 			}
 		} else if (msg.isDeleteReply()) {
 			for (const QVariant &var : msg.toDeleteReply().recordIds()) {
-				const int id = var.toInt();
+				const QUuid id = var.toUuid();
 				if (m_rows.contains(id)) {
 					m_rows.remove(id);
 					emit removed(id);
@@ -132,7 +132,7 @@ void SyncedList::reset()
 
 void SyncedList::addOrUpdate(const QJsonObject &record)
 {
-	const int id = Json::ensureInteger(record, "id");
+	const QUuid id = Json::ensureUuid(record, "id");
 
 	// if it's a new record we need all fields, otherwise we need to re-fetch the complete thing
 	if (!m_rows.contains(id)) {
@@ -176,7 +176,7 @@ void SyncedListModel::setFilter(const Filter &filter)
 {
 	beginResetModel();
 	m_filter = filter;
-	m_indices = JD::Util::Functional::filter2<QVector<int>>(m_list->indexes(), [this](const int id) { return m_filter.matches(m_list->getAll(id)); });
+	m_indices = JD::Util::Functional::filter2<QVector<QUuid>>(m_list->indexes(), [this](const QUuid &id) { return m_filter.matches(m_list->getAll(id)); });
 	endResetModel();
 	focus();
 }
@@ -198,8 +198,8 @@ QVariant SyncedListModel::data(const QModelIndex &index, int role) const
 		return QVariant();
 	}
 	const QString property = m_mapping[qMakePair(index.column(), Qt::ItemDataRole(role))].property;
-	const int id = idForIndex(index);
-	if (id < 0) {
+	const QUuid id = idForIndex(index);
+	if (m_preliminaryAdditions.contains(id)) {
 		return m_preliminaryAdditions[id][property];
 	} else if (m_preliminaryChanges.contains(id) && m_preliminaryChanges[id].contains(property)) {
 		return m_preliminaryChanges[id][property];
@@ -207,7 +207,7 @@ QVariant SyncedListModel::data(const QModelIndex &index, int role) const
 		return m_list->get(id, property);
 	}
 }
-QVariant SyncedListModel::data(const int id, const QString &property) const
+QVariant SyncedListModel::data(const QUuid &id, const QString &property) const
 {
 	if (id < 0) {
 		return m_preliminaryAdditions[id][property];
@@ -228,9 +228,9 @@ bool SyncedListModel::setData(const QModelIndex &index, const QVariant &value, i
 	}
 
 	const QString property = mapping.property;
-	const int id = idForIndex(index);
+	const QUuid id = idForIndex(index);
 
-	if (id < 0) {
+	if (m_preliminaryAdditions.contains(id)) {
 		m_preliminaryAdditions[id][property] = value;
 	} else {
 		if (value == m_list->get(id, property)) {
@@ -245,7 +245,7 @@ bool SyncedListModel::setData(const QModelIndex &index, const QVariant &value, i
 	emit dataChanged(index, index, QVector<int>() << role);
 	return true;
 }
-bool SyncedListModel::setData(const int id, const QString &property, const QVariant &value)
+bool SyncedListModel::setData(const QUuid &id, const QString &property, const QVariant &value)
 {
 	if (id < 0) {
 		m_preliminaryAdditions[id][property] = value;
@@ -299,25 +299,25 @@ void SyncedListModel::addEditable(const int column, const QString &property)
 	addMapping(column, property, Qt::EditRole, true);
 }
 
-int SyncedListModel::addPreliminary(const QVariantHash &properties)
+QUuid SyncedListModel::addPreliminary(const QVariantHash &properties)
 {
 	QVariantHash props;
 	for (const QString &prop : m_list->properties()) {
 		props.insert(prop, properties.value(prop));
 	}
 
-	int nextId = -(m_preliminaryAdditions.size() + 10);
-	m_preliminaryAdditions.insert(nextId, props);
+	const QUuid id = QUuid::createUuid();
+	m_preliminaryAdditions.insert(id, props);
 
 	beginInsertRows(QModelIndex(), m_indices.size(), m_indices.size());
-	m_indices.append(nextId);
+	m_indices.append(id);
 	endInsertRows();
 
-	emit added(nextId);
+	emit added(id);
 
-	return nextId;
+	return id;
 }
-void SyncedListModel::removePreliminary(const int id)
+void SyncedListModel::removePreliminary(const QUuid &id)
 {
 	const int index = m_indices.indexOf(id);
 	if (index == -1) {
@@ -354,7 +354,7 @@ void SyncedListModel::discardPreliminaries()
 	m_preliminaryRemovals.clear();
 	m_preliminaryChanges.clear();
 
-	for (const int id : additions.keys()) {
+	for (const QUuid &id : additions.keys()) {
 		const int index = m_indices.indexOf(id);
 		if (index == -1) {
 			continue;
@@ -364,14 +364,14 @@ void SyncedListModel::discardPreliminaries()
 		endRemoveRows();
 		emit removed(id);
 	}
-	for (const int id : removals) {
+	for (const QUuid &id : removals) {
 		const int ind = m_indices.indexOf(id);
 		if (ind == -1) {
 			continue;
 		}
 		emit dataChanged(index(ind, 0), index(ind, m_cols));
 	}
-	for (const int id : changes.keys()) {
+	for (const QUuid &id : changes.keys()) {
 		const int ind = m_indices.indexOf(id);
 		if (ind == -1) {
 			continue;
@@ -391,7 +391,7 @@ bool SyncedListModel::isModified() const
 	return !m_preliminaryAdditions.isEmpty() || !m_preliminaryChanges.isEmpty() || !m_preliminaryRemovals.isEmpty();
 }
 
-void SyncedListModel::addedToList(const int id)
+void SyncedListModel::addedToList(const QUuid &id)
 {
 	if (m_filter.matches(m_list->getAll(id))) {
 		Q_ASSERT(!m_indices.contains(id));
@@ -401,7 +401,7 @@ void SyncedListModel::addedToList(const int id)
 		emit added(id);
 	}
 }
-void SyncedListModel::removedFromList(const int id)
+void SyncedListModel::removedFromList(const QUuid &id)
 {
 	const int row = m_indices.indexOf(id);
 	if (row != -1) {
@@ -416,7 +416,7 @@ void SyncedListModel::removedFromList(const int id)
 		}
 	}
 }
-void SyncedListModel::changedInList(const int id, const QString &property)
+void SyncedListModel::changedInList(const QUuid &id, const QString &property)
 {
 	const int row = m_indices.indexOf(id);
 
@@ -449,7 +449,7 @@ QPair<int, Qt::ItemDataRole> SyncedListModel::reverseMapping(const QString &prop
 	return {};
 }
 
-int SyncedListModel::idForIndex(const QModelIndex &index) const
+QUuid SyncedListModel::idForIndex(const QModelIndex &index) const
 {
 	return m_indices.at(index.row());
 }

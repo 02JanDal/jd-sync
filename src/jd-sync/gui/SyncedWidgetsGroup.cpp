@@ -218,7 +218,7 @@ void SyncedWidgetsGroup::setSelector(const QString &otherProperty, QAbstractItem
 	view->setModel(m_model);
 	connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, [this](const QModelIndex &index) { setId(m_model->idForIndex(index)); });
 }
-void SyncedWidgetsGroup::setSelector(const int id)
+void SyncedWidgetsGroup::setSelector(const QUuid &id)
 {
 	m_model->setFilter(Filter(FilterPart("id", FilterPart::Equal, id)));
 	setId(m_id = id);
@@ -322,14 +322,14 @@ void SyncedWidgetsGroup::commit()
 	emit committed();
 }
 
-void SyncedWidgetsGroup::setId(const int id)
+void SyncedWidgetsGroup::setId(const QUuid &id)
 {
 	if (id == m_id) {
 		return;
 	}
 	m_id = id;
 
-	if (m_id != -1) {
+	if (!m_id.isNull()) {
 		if (m_list->contains(id)) {
 			for (SyncedWidgetsGroupEntry *entry : m_entries) {
 				entry->setValue(m_list->get(id, entry->m_property));
@@ -346,12 +346,12 @@ void SyncedWidgetsGroup::setId(const int id)
 		subgroup->setParentId(m_id);
 	}
 }
-void SyncedWidgetsGroup::setParentId(const int id)
+void SyncedWidgetsGroup::setParentId(const QUuid &id)
 {
 	m_model->setFilter(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, id)));
 }
 
-void SyncedWidgetsGroup::recordAdded(const int id)
+void SyncedWidgetsGroup::recordAdded(const QUuid &id)
 {
 	if (id == m_id) {
 		for (SyncedWidgetsGroupEntry *entry : m_entries) {
@@ -359,13 +359,13 @@ void SyncedWidgetsGroup::recordAdded(const int id)
 		}
 	}
 }
-void SyncedWidgetsGroup::recordRemoved(const int id)
+void SyncedWidgetsGroup::recordRemoved(const QUuid &id)
 {
 	if (id == m_id) {
-		setId(-1);
+		setId(QUuid());
 	}
 }
-void SyncedWidgetsGroup::recordChanged(const int id, const QString &property)
+void SyncedWidgetsGroup::recordChanged(const QUuid &id, const QString &property)
 {
 	if (id == m_id) {
 		for (SyncedWidgetsGroupEntry *entry : m_entries) {
