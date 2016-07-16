@@ -9,8 +9,41 @@
 
 using namespace JD::Util;
 
-SyncedList::SyncedList(MessageHub *hub, const QString &channel, const QSet<QString> &properties, QObject *parent)
-	: QObject(parent), AbstractActor(hub), m_channel(channel), m_properties(properties)
+struct ToJsonObjectRecord
+{
+	Table m_table;
+	bool m_isCreate;
+
+	explicit ToJsonObjectRecord(const Table &table, const bool isCreate) : m_table(table), m_isCreate(isCreate) {}
+
+	QJsonObject operator()(const QVariantHash &properties) const
+	{
+		QJsonObject out;
+		for (const QString &property : properties.keys()) {
+			if (m_table.contains(property)) {
+				out.insert(property, toJson(m_table.column(property).type(), properties.value(property)));
+			}
+		}
+		if (m_isCreate) {
+			for (const QString &column : m_table.columns().keys()) {
+				if (!out.contains(column)) {
+					const Column &col = m_table.column(column);
+					if (col.defaultValue().isValid()) {
+						out.insert(column, toJson(col.type(), col.defaultValue()));
+					} else if (col.isNullable()) {
+						out.insert(column, QJsonValue::Null);
+					} else {
+						throw Exception("No value given for non-defaulted non-nullable field");
+					}
+				}
+			}
+		}
+		return out;
+	}
+};
+
+SyncedList::SyncedList(MessageHub *hub, const QString &channel, const Table &table, QObject *parent)
+	: QObject(parent), AbstractActor(hub), m_channel(channel), m_table(table)
 {
 	subscribeTo(channel);
 }
@@ -26,36 +59,49 @@ QVariantHash SyncedList::getAll(const QUuid &id) const
 
 void SyncedList::set(const QUuid &id, const QString &property, const QVariant &value)
 {
-	if (get(id, property) != value) {
-		request(UpdateMessage(m_channel, m_channel, QVector<QJsonObject>() << QJsonObject({{"id", Json::toJson(id)}, {property, Json::toJson(value)}}))).send();
-	}
+	set(id, QVariantHash({{property, Json::toJson(value)}}));
 }
 void SyncedList::set(const QUuid &id, const QVariantHash &properties)
 {
 	QVariantHash prop = properties;
 	prop.insert("id", id);
-	request(UpdateMessage(m_channel, m_channel, QVector<QJsonObject>() << QJsonObject::fromVariantHash(prop))).send();
+	set(QVector<QVariantHash>() << prop);
 }
 void SyncedList::set(const QVector<QVariantHash> &properties)
 {
-	request(UpdateMessage(m_channel, m_channel, Functional::map(properties, QJsonObject::fromVariantHash))).send();
+	const QVector<QJsonObject> array = Functional::map(properties, ToJsonObjectRecord(m_table, false));
+	request(UpdateMessage(m_channel, m_channel, array)).send();
+	for (const QJsonObject &obj : array) {
+		addOrUpdate(obj);
+	}
 }
 
 void SyncedList::add(const QVariantHash &values)
 {
-	request(CreateMessage(m_channel, m_channel, QJsonObject::fromVariantHash(values))).send();
+	add(QVector<QVariantHash>() << values);
 }
 void SyncedList::add(const QVector<QVariantHash> &values)
 {
-	request(CreateMessage(m_channel, m_channel, Functional::map(values, QJsonObject::fromVariantHash))).send();
+	const QVector<QJsonObject> array = Functional::map(values, ToJsonObjectRecord(m_table, true));
+	request(CreateMessage(m_channel, m_channel, array)).send();
+	for (const QJsonObject &obj : array) {
+		addOrUpdate(obj);
+	}
 }
 void SyncedList::remove(const QUuid &id)
 {
-	request(DeleteMessage(m_channel, m_channel, id)).send();
+	remove(QSet<QUuid>() << id);
 }
 void SyncedList::remove(const QSet<QUuid> &ids)
 {
-	request(DeleteMessage(m_channel, m_channel, Functional::map2<QVector<QVariant>>(ids, &QVariant::fromValue<QUuid>))).send();
+	const QVector<QVariant> idsVector = Functional::map2<QVector<QVariant>>(ids, &QVariant::fromValue<QUuid>);
+	request(DeleteMessage(m_channel, m_channel, idsVector))
+			.error([this, idsVector](const ErrorMessage &) { fetchOnce(Filter(FilterPart("id", FilterPart::InSet, idsVector.toList()))); })
+			.send();
+	for (const QUuid &id : ids) {
+		m_rows.remove(id);
+		emit removed(id);
+	}
 }
 
 bool SyncedList::contains(const QUuid &id) const
@@ -98,9 +144,7 @@ void SyncedList::receive(const Message &msg)
 	if (msg.channel() == m_channel) {
 		if (msg.isCreateReply()) {
 			for (const QJsonObject &row : msg.toCreateReply().items()) {
-				const QUuid id = Json::ensureUuid(row, "id");
-				m_rows.insert(id, row.toVariantHash());
-				emit added(id);
+				addOrUpdate(row);
 			}
 		} else if (msg.isReadReply()) {
 			for (const QJsonObject &row : msg.toReadReply().items()) {
@@ -136,18 +180,24 @@ void SyncedList::addOrUpdate(const QJsonObject &record)
 
 	// if it's a new record we need all fields, otherwise we need to re-fetch the complete thing
 	if (!m_rows.contains(id)) {
-		for (const QString &expected : m_properties) {
+		for (const QString &expected : m_table.columns().keys()) {
 			if (!record.contains(expected)) {
 				request(Message(m_channel, "read", Json::toJson(id))).send();
 				return;
 			}
 		}
-		m_rows.insert(id, record.toVariantHash());
+		QVariantHash values;
+		for (const QString &property : record.keys()) {
+			if (m_table.contains(property)) {
+				values.insert(property, fromJson(m_table.column(property).type(), record.value(property)));
+			}
+		}
+		m_rows.insert(id, values);
 		emit added(id);
 	} else {
 		// updated
 		for (auto it = record.begin(); it != record.end(); ++it) {
-			const QVariant value = Json::ensureVariant(it.value());
+			const QVariant value = fromJson(m_table.column(it.key()).type(), it.value());
 			if (m_rows[id][it.key()] != value) {
 				m_rows[id][it.key()] = value;
 				emit changed(id, it.key());
@@ -156,8 +206,8 @@ void SyncedList::addOrUpdate(const QJsonObject &record)
 	}
 }
 
-SyncedListModel::SyncedListModel(MessageHub *hub, const QString &channel, const QSet<QString> &properties, QObject *parent)
-	: SyncedListModel(new SyncedList(hub, channel, properties, this), parent) {}
+SyncedListModel::SyncedListModel(MessageHub *hub, const QString &channel, const Table &table, QObject *parent)
+	: SyncedListModel(new SyncedList(hub, channel, table, this), parent) {}
 SyncedListModel::SyncedListModel(SyncedList *list, QObject *parent)
 	: QAbstractListModel(parent), m_list(list)
 {
@@ -207,9 +257,17 @@ QVariant SyncedListModel::data(const QModelIndex &index, int role) const
 		return m_list->get(id, property);
 	}
 }
+QVariant SyncedListModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+	if (orientation == Qt::Horizontal && role == Qt::DisplayRole && section < m_headings.size()) {
+		return m_headings.at(section);
+	} else {
+		return QVariant();
+	}
+}
 QVariant SyncedListModel::data(const QUuid &id, const QString &property) const
 {
-	if (id < 0) {
+	if (m_preliminaryAdditions.contains(id)) {
 		return m_preliminaryAdditions[id][property];
 	} else if (m_preliminaryChanges.contains(id) && m_preliminaryChanges[id].contains(property)) {
 		return m_preliminaryChanges[id][property];
@@ -247,7 +305,7 @@ bool SyncedListModel::setData(const QModelIndex &index, const QVariant &value, i
 }
 bool SyncedListModel::setData(const QUuid &id, const QString &property, const QVariant &value)
 {
-	if (id < 0) {
+	if (m_preliminaryAdditions.contains(id)) {
 		m_preliminaryAdditions[id][property] = value;
 	} else {
 		if (value == m_list->get(id, property)) {
@@ -299,14 +357,20 @@ void SyncedListModel::addEditable(const int column, const QString &property)
 	addMapping(column, property, Qt::EditRole, true);
 }
 
+void SyncedListModel::setHeadings(const QVector<QString> &headings)
+{
+	m_headings = headings;
+}
+
 QUuid SyncedListModel::addPreliminary(const QVariantHash &properties)
 {
 	QVariantHash props;
-	for (const QString &prop : m_list->properties()) {
+	for (const QString &prop : m_list->table().columns().keys()) {
 		props.insert(prop, properties.value(prop));
 	}
+	props.insert("id", properties.value("id", QUuid::createUuid()));
 
-	const QUuid id = QUuid::createUuid();
+	const QUuid id = props.value("id").toUuid();
 	m_preliminaryAdditions.insert(id, props);
 
 	beginInsertRows(QModelIndex(), m_indices.size(), m_indices.size());
@@ -314,6 +378,7 @@ QUuid SyncedListModel::addPreliminary(const QVariantHash &properties)
 	endInsertRows();
 
 	emit added(id);
+	emit modifiedChanged(isModified());
 
 	return id;
 }
@@ -329,21 +394,26 @@ void SyncedListModel::removePreliminary(const QUuid &id)
 }
 void SyncedListModel::commitPreliminaries()
 {
-	if (!m_preliminaryAdditions.isEmpty()) {
-		m_list->add(m_preliminaryAdditions.values().toVector());
-	}
-	if (!m_preliminaryChanges.isEmpty()) {
-		QVector<QVariantHash> changes;
-		for (auto it = m_preliminaryChanges.begin(); it != m_preliminaryChanges.end(); ++it) {
-			(*it)["id"] = it.key();
-			changes.append(*it);
-		}
-		m_list->set(changes);
-	}
-	if (!m_preliminaryRemovals.isEmpty()) {
-		m_list->remove(m_preliminaryRemovals);
-	}
+	auto additions = m_preliminaryAdditions;
+	auto removals = m_preliminaryRemovals;
+	auto changes = m_preliminaryChanges;
+
 	discardPreliminaries();
+
+	if (!additions.isEmpty()) {
+		m_list->add(additions.values().toVector());
+	}
+	if (!changes.isEmpty()) {
+		QVector<QVariantHash> properties;
+		for (auto it = changes.begin(); it != changes.end(); ++it) {
+			(*it)["id"] = it.key();
+			properties.append(*it);
+		}
+		m_list->set(properties);
+	}
+	if (!removals.isEmpty()) {
+		m_list->remove(removals);
+	}
 }
 void SyncedListModel::discardPreliminaries()
 {
@@ -389,6 +459,11 @@ void SyncedListModel::discardPreliminaries()
 bool SyncedListModel::isModified() const
 {
 	return !m_preliminaryAdditions.isEmpty() || !m_preliminaryChanges.isEmpty() || !m_preliminaryRemovals.isEmpty();
+}
+
+bool SyncedListModel::isPreliminaryAddition(const QUuid &uuid) const
+{
+	return m_preliminaryAdditions.contains(uuid);
 }
 
 void SyncedListModel::addedToList(const QUuid &id)
@@ -451,5 +526,26 @@ QPair<int, Qt::ItemDataRole> SyncedListModel::reverseMapping(const QString &prop
 
 QUuid SyncedListModel::idForIndex(const QModelIndex &index) const
 {
+	if (!hasIndex(index.row(), index.column(), index.parent())) {
+		return QUuid();
+	}
 	return m_indices.at(index.row());
+}
+QModelIndex SyncedListModel::indexForId(const QUuid &id) const
+{
+	return index(m_indices.indexOf(id));
+}
+
+QVariantHash SyncedListModel::getAll(const QUuid &id) const
+{
+	QVariantHash out;
+	if (m_preliminaryAdditions.contains(id)) {
+		out = m_preliminaryAdditions.value(id);
+	} else {
+		out = m_list->getAll(id);
+		for (const QString &property : m_preliminaryChanges.value(id).keys()) {
+			out[property] = m_preliminaryChanges.value(id).value(property);
+		}
+	}
+	return out;
 }

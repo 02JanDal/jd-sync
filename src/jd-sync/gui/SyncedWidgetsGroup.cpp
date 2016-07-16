@@ -204,6 +204,49 @@ void SyncedWidgetsGroup::registerButtons(QPushButton *saveBtn, QPushButton *rese
 	}
 }
 
+void SyncedWidgetsGroup::registerAddButton(QPushButton *btn)
+{
+	connect(btn, &QPushButton::clicked, this, [this]()
+	{
+		QVariantHash values;
+		values["id"] = QUuid::createUuid();
+		if (!m_parentId.isNull()) {
+			values[m_parentPropertySelector] = m_parentId;
+		}
+		const QUuid id = m_model->addPreliminary(values);
+		const QModelIndex index = m_model->indexForId(id);
+		if (m_selector->inherits("QComboBox")) {
+			qobject_cast<QComboBox *>(m_selector)->setCurrentIndex(index.row());
+		} else if (m_selector->inherits("QAbstractItemView")) {
+			qobject_cast<QAbstractItemView *>(m_selector)->setCurrentIndex(index);
+		}
+	});
+}
+void SyncedWidgetsGroup::registerRemoveButton(QPushButton *btn)
+{
+	connect(btn, &QPushButton::clicked, this, [this]()
+	{
+		if (!m_id.isNull()) {
+			m_model->removePreliminary(m_id);
+		}
+	});
+	connect(this, &SyncedWidgetsGroup::idChanged, btn, [btn](const QUuid &id) { btn->setEnabled(!id.isNull()); });
+	btn->setEnabled(!m_id.isNull());
+}
+void SyncedWidgetsGroup::registerCopyButton(QPushButton *btn)
+{
+	connect(btn, &QPushButton::clicked, this, [this]()
+	{
+		if (!m_id.isNull()) {
+			QVariantHash values = m_model->getAll(m_id);
+			values["id"] = QUuid::createUuid();
+			m_model->addPreliminary(values);
+		}
+	});
+	connect(this, &SyncedWidgetsGroup::idChanged, btn, [btn](const QUuid &id) { btn->setEnabled(!id.isNull()); });
+	btn->setEnabled(!m_id.isNull());
+}
+
 void SyncedWidgetsGroup::setSelector(const QString &otherProperty, QComboBox *box)
 {
 	m_parentPropertySelector = otherProperty;
@@ -221,7 +264,7 @@ void SyncedWidgetsGroup::setSelector(const QString &otherProperty, QAbstractItem
 void SyncedWidgetsGroup::setSelector(const QUuid &id)
 {
 	m_model->setFilter(Filter(FilterPart("id", FilterPart::Equal, id)));
-	setId(m_id = id);
+	setId(id);
 }
 
 void SyncedWidgetsGroup::add(const QString &property, QLabel *label)
@@ -256,6 +299,7 @@ void SyncedWidgetsGroup::add(const QString &property, const QHash<QVariant, QRad
 SyncedWidgetsGroup *SyncedWidgetsGroup::add(const QString &otherProperty, QComboBox *box, SyncedList *list)
 {
 	SyncedWidgetsGroup *group = new SyncedWidgetsGroup(list, this);
+	box->setModel(group->m_model);
 	group->setSelector(otherProperty, box);
 	m_subgroups.append(group);
 	connect(group, &SyncedWidgetsGroup::modifiedChanged, this, [this]() { emit modifiedChanged(isModified()); });
@@ -264,6 +308,7 @@ SyncedWidgetsGroup *SyncedWidgetsGroup::add(const QString &otherProperty, QCombo
 SyncedWidgetsGroup *SyncedWidgetsGroup::add(const QString &otherProperty, QAbstractItemView *view, SyncedList *list)
 {
 	SyncedWidgetsGroup *group = new SyncedWidgetsGroup(list, this);
+	view->setModel(group->m_model);
 	group->setSelector(otherProperty, view);
 	m_subgroups.append(group);
 	connect(group, &SyncedWidgetsGroup::modifiedChanged, this, [this]() { emit modifiedChanged(isModified()); });
@@ -330,9 +375,9 @@ void SyncedWidgetsGroup::setId(const QUuid &id)
 	m_id = id;
 
 	if (!m_id.isNull()) {
-		if (m_list->contains(id)) {
+		if (m_list->contains(id) || m_model->isPreliminaryAddition(id)) {
 			for (SyncedWidgetsGroupEntry *entry : m_entries) {
-				entry->setValue(m_list->get(id, entry->m_property));
+				entry->setValue(m_model->data(id, entry->m_property));
 			}
 		} else {
 			m_list->fetchOnce(Filter(FilterPart("id", FilterPart::Equal, id)));
@@ -345,9 +390,12 @@ void SyncedWidgetsGroup::setId(const QUuid &id)
 	for (SyncedWidgetsGroup *subgroup : m_subgroups) {
 		subgroup->setParentId(m_id);
 	}
+
+	emit idChanged(m_id);
 }
 void SyncedWidgetsGroup::setParentId(const QUuid &id)
 {
+	m_parentId = id;
 	m_model->setFilter(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, id)));
 }
 
@@ -357,6 +405,7 @@ void SyncedWidgetsGroup::recordAdded(const QUuid &id)
 		for (SyncedWidgetsGroupEntry *entry : m_entries) {
 			entry->setValue(m_list->get(id, entry->m_property));
 		}
+		setEnabled(true);
 	}
 }
 void SyncedWidgetsGroup::recordRemoved(const QUuid &id)

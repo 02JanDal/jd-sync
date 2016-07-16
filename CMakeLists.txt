@@ -6,8 +6,10 @@ option(TCP_CONNECTION "Build with TCP connection support" ON)
 option(WEBSOCKET_CONNECTION "Build with WebSocket connection support" OFF)
 
 if(NOT TARGET jd-util)
-	message(STATUS "Including jd-util from jd-sync")
 	add_subdirectory(../jd-util ${CMAKE_CURRENT_BINARY_DIR}/jd-util)
+endif()
+if(NOT TARGET jd-db-schema)
+	add_subdirectory(../jd-db ${CMAKE_CURRENT_BINARY_DIR}/jd-db)
 endif()
 
 find_package(Qt5 REQUIRED COMPONENTS Core)

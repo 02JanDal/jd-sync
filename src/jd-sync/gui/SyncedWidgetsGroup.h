@@ -29,6 +29,10 @@ public:
 	~SyncedWidgetsGroup();
 
 	void registerButtons(QPushButton *saveBtn, QPushButton *resetBtn, QPushButton *discardBtn);
+	void registerAddButton(QPushButton *btn);
+	void registerRemoveButton(QPushButton *btn);
+	void registerCopyButton(QPushButton *btn);
+
 	void setSelector(const QString &otherProperty, QComboBox *box);
 	void setSelector(const QString &otherProperty, QAbstractItemView *view);
 	void setSelector(const QUuid &id);
@@ -48,6 +52,8 @@ public:
 
 	bool isModified() const;
 	QUuid id() const { return m_id; }
+
+	SyncedListModel *model() const { return m_model; }
 
 signals:
 	void modifiedChanged(const bool modified);
@@ -76,6 +82,7 @@ private:
 	// either m_selector or m_id should be used
 	QWidget *m_selector = nullptr;
 	QString m_parentPropertySelector;
+	QUuid m_parentId;
 
 	friend class SyncedWidgetsGroupEntry;
 	void edited(SyncedWidgetsGroupEntry *entry);
