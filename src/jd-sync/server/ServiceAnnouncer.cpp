@@ -131,7 +131,7 @@ public:
 			case AVAHI_CLIENT_CONNECTING:
 				break;
 			}
-		} catch (Exception e) {
+		} catch (Exception &e) {
 			data->notifyError(e.cause());
 		}
 	}

@@ -6,9 +6,8 @@
 class MonitorModel : public QAbstractListModel, public AbstractActor
 {
 	Q_OBJECT
-public:
 	INTROSPECTION
-
+public:
 	explicit MonitorModel(MessageHub *hub, QObject *parent = nullptr);
 
 	int rowCount(const QModelIndex &parent) const override;

@@ -10,9 +10,8 @@ class QTcpSocket;
 class TcpClientActor final : public AbstractExternalActor
 {
 	Q_OBJECT
-public:
 	INTROSPECTION
-
+public:
 	explicit TcpClientActor(MessageHub *hub, const QString &host, const quint16 port, QObject *parent = nullptr);
 
 

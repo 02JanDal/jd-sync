@@ -24,7 +24,7 @@ private slots:
 
 private:
 	qintptr m_handle;
-	QTcpSocket *m_socket;
+	QTcpSocket *m_socket = nullptr;
 	QString m_auth;
 
 	QQueue<Message> m_inQueue, m_outQueue;

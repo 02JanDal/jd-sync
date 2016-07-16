@@ -15,6 +15,7 @@ TcpClientConnection::TcpClientConnection(MessageHub *hub, qintptr handle, const 
 
 void TcpClientConnection::run()
 {
+	Q_ASSERT_X(!m_socket, "TcpClientConnection::run", "attempt to re-run");
 	m_socket = new QTcpSocket(this);
 	connect(m_socket, &QTcpSocket::readyRead, this, &TcpClientConnection::readyRead);
 	connect(m_socket, &QTcpSocket::disconnected, this, &TcpClientConnection::disconnected);

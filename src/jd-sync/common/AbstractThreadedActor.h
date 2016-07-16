@@ -6,9 +6,8 @@
 class AbstractThreadedActor : public QObject, public AbstractActor
 {
 	Q_OBJECT
-public:
 	INTROSPECTION
-
+public:
 	explicit AbstractThreadedActor(MessageHub *hub, QObject *parent = nullptr);
 	virtual ~AbstractThreadedActor();
 

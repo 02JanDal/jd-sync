@@ -12,10 +12,9 @@ class Request;
 
 class AbstractActor
 {
-public:
 	INTROSPECTION
-
-	AbstractActor(MessageHub *hub);
+public:
+	explicit AbstractActor(MessageHub *hub);
 	virtual ~AbstractActor();
 
 	MessageHub *hub() const { return m_hub; }

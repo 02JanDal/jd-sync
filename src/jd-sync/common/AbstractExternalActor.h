@@ -4,9 +4,8 @@
 
 class AbstractExternalActor : public AbstractThreadedActor
 {
-public:
 	INTROSPECTION
-
+public:
 	AbstractExternalActor(MessageHub *h, QObject *parent = nullptr);
 	virtual ~AbstractExternalActor() {}
 

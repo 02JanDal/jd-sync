@@ -11,9 +11,8 @@ class TimeoutTimer;
 
 class Request : public AbstractActor
 {
-public:
 	INTROSPECTION
-
+public:
 	explicit Request(MessageHub *hub, const Message &msg);
 	~Request();
 

@@ -80,6 +80,6 @@ class Filter : public FilterGroup
 public:
 	explicit Filter(const QVector<FilterPart> &parts, const QVector<FilterGroup> &groups, const Op op = And, const bool negated = false);
 	explicit Filter(const FilterPart &part);
-	Filter(const FilterGroup &mainGroup);
+	explicit Filter(const FilterGroup &mainGroup);
 	Filter() {}
 };

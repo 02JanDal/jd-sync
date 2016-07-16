@@ -15,9 +15,8 @@
 class SyncedList : public QObject, public AbstractActor
 {
 	Q_OBJECT
-public:
 	INTROSPECTION
-
+public:
 	explicit SyncedList(MessageHub *hub, const QString &channel, const Table &table, QObject *parent = nullptr);
 
 	QVariant get(const QUuid &id, const QString &property) const;

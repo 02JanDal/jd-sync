@@ -283,7 +283,7 @@ QDebug &operator<<(QDebug &dbg, const Message &msg)
 			dbg.nospace() << " data=";
 			if (msg.data().isObject()) {
 				dbg.nospace().noquote() << Json::toText(msg.dataObject());
-			} else if (msg.data().isObject()) {
+			} else if (msg.data().isArray()) {
 				dbg.nospace().noquote() << Json::toText(msg.dataArray());
 			} else if (msg.data().isBool()) {
 				dbg.nospace() << msg.data().toBool();
