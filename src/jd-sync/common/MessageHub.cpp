@@ -60,10 +60,6 @@ void MessageHub::messageFromActor(AbstractActor *actor, const Message &msg)
 				a->reset();
 			}
 		}
-	} else if (msg.channel() == "client.ping") {
-		if (msg.command() == "request") {
-			actor->receive(msg.createTargetedReply("reply", msg.data()));
-		}
 	} else {
 		sendToAllActors(msg);
 	}

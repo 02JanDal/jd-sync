@@ -50,7 +50,9 @@ void TcpClientConnection::readyRead()
 			msg = Message::fromJson(Json::ensureObject(doc));
 			qCDebug(Tcp) << "received" << msg.toJson();
 
-			if (m_auth.isNull()) {
+			if (msg.channel() == "client.ping" && msg.command() == "request") {
+				sendToExternal(msg.createTargetedReply("reply", msg.data()));
+			} else if (m_auth.isNull()) {
 				receivedFromExternal(msg);
 			} else if (msg.channel() == "client.auth" && msg.command() == "attempt") {
 				if (Json::ensureString(msg.dataObject(), "token") == m_auth) {

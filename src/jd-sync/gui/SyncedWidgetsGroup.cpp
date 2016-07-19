@@ -241,8 +241,9 @@ void SyncedWidgetsGroup::registerRemoveButton(QPushButton *btn)
 			m_changeTrackingList->remove(m_id);
 		}
 	});
-	connect(this, &SyncedWidgetsGroup::idChanged, btn, [btn](const QUuid &id) { btn->setEnabled(!id.isNull()); });
-	btn->setEnabled(!m_id.isNull());
+	JD::Util::applyProperty(this, &SyncedWidgetsGroup::id, &SyncedWidgetsGroup::idChanged, btn, [this, btn](const QUuid &id) {
+		btn->setEnabled(!id.isNull());
+	});
 }
 void SyncedWidgetsGroup::registerCopyButton(QPushButton *btn)
 {
@@ -457,9 +458,11 @@ void SyncedWidgetsGroup::injectProxyModel(QAbstractProxyModel *proxy)
 	if (QComboBox *box = qobject_cast<QComboBox *>(m_selector)) {
 		proxy->setSourceModel(box->model());
 		box->setModel(proxy);
+		connect(box, static_cast<void(QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [this, box](const int index) { setId(m_model->idForIndex(m_model->index(index))); });
 	} else if (QAbstractItemView *view = qobject_cast<QAbstractItemView *>(m_selector)) {
 		proxy->setSourceModel(view->model());
 		view->setModel(proxy);
+		connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, [this](const QModelIndex &index) { setId(m_model->idForIndex(index)); });
 	}
 }
 
@@ -563,7 +566,7 @@ QVariantHash SyncedWidgetsGroup::defaultValues() const
 	if (!m_orderProperty.isNull()) {
 		const QVector<QVariantHash> existing = m_changeTrackingList->get(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, m_parentId)));
 		const QVariant max = JD::Util::Functional::collection(existing).map([this](const QVariantHash &hash) { return hash.value(m_orderProperty); }).max();
-		values.insert(m_orderProperty, max);
+		values.insert(m_orderProperty, max.toInt()+1);
 	}
 	return values;
 }

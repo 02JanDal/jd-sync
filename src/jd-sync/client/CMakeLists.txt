@@ -12,6 +12,8 @@ set(SRC_CLIENT
 
 	TcpClientActor.h
 	TcpClientActor.cpp
+	Ping.h
+	Ping.cpp
 
 	MonitorModel.h
 	MonitorModel.cpp
