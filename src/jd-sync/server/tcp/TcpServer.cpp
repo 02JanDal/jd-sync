@@ -40,7 +40,7 @@ void TcpServer::start()
 		qCWarning(Tcp) << "Unable to start TCP server:" << m_server->errorString();
 		std::exit(1);
 	} else {
-		qCDebug(Tcp) << "TCP server started on" << formatAddress(m_server->serverAddress(), m_server->serverPort());
+		qCInfo(Tcp) << "TCP server started on" << formatAddress(m_server->serverAddress(), m_server->serverPort());
 	}
 }
 

@@ -11,3 +11,5 @@ target_include_directories(jd-sync-gui PUBLIC
 )
 
 install(TARGETS jd-sync-gui EXPORT jd-sync DESTINATION lib)
+
+cppcheck_target(jd-sync-gui)

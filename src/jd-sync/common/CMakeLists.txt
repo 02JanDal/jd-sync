@@ -14,6 +14,8 @@ set(SRC_COMMON
 	AbstractExternalActor.cpp
 	Request.h
 	Request.cpp
+	RequestWaiter.h
+	RequestWaiter.cpp
 	Filter.h
 	Filter.cpp
 	CRUDMessages.h
@@ -31,3 +33,5 @@ target_include_directories(jd-sync-common PUBLIC
 )
 
 install(TARGETS jd-sync-common EXPORT jd-sync DESTINATION lib)
+
+cppcheck_target(jd-sync-common)

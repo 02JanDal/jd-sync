@@ -11,8 +11,17 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QGroupBox>
+#include <QSortFilterProxyModel>
+#include <QMessageBox>
 
-#include "client/SyncedList.h"
+#include <jd-util/Functional.h>
+#include <jd-util/Util.h>
+#include <jd-util/Exception.h>
+
+#include "client/lists/SyncedList.h"
+#include "client/lists/FilteredList.h"
+#include "client/lists/ChangeTrackingList.h"
+#include "client/lists/RecordListModel.h"
 
 inline static uint qHash(const QVariant &value, uint seed = 0)
 {
@@ -173,12 +182,16 @@ private:
 };
 
 SyncedWidgetsGroup::SyncedWidgetsGroup(SyncedList *list, QObject *parent)
-	: QObject(parent), m_list(list), m_model(new SyncedListModel(list, this))
+	: QObject(parent),
+	  m_list(list),
+	  m_filteredList(new FilteredList(m_list, this)),
+	  m_changeTrackingList(new ChangeTrackingList(m_filteredList, this)),
+	  m_model(new RecordListModel(m_changeTrackingList, this))
 {
-	connect(m_model, &SyncedListModel::added, this, &SyncedWidgetsGroup::recordAdded);
-	connect(m_model, &SyncedListModel::removed, this, &SyncedWidgetsGroup::recordRemoved);
-	connect(m_model, &SyncedListModel::changed, this, &SyncedWidgetsGroup::recordChanged);
-	connect(m_model, &SyncedListModel::modifiedChanged, this, [this]() { emit modifiedChanged(isModified()); });
+	connect(m_changeTrackingList, &AbstractRecordList::added, this, &SyncedWidgetsGroup::recordAdded);
+	connect(m_changeTrackingList, &AbstractRecordList::removed, this, &SyncedWidgetsGroup::recordRemoved);
+	connect(m_changeTrackingList, &AbstractRecordList::changed, this, &SyncedWidgetsGroup::recordChanged);
+	connect(m_changeTrackingList, &ChangeTrackingList::modifiedChanged, this, [this]() { emit modifiedChanged(isModified()); });
 }
 SyncedWidgetsGroup::~SyncedWidgetsGroup()
 {
@@ -208,12 +221,10 @@ void SyncedWidgetsGroup::registerAddButton(QPushButton *btn)
 {
 	connect(btn, &QPushButton::clicked, this, [this]()
 	{
-		QVariantHash values;
-		values["id"] = QUuid::createUuid();
-		if (!m_parentId.isNull()) {
-			values[m_parentPropertySelector] = m_parentId;
-		}
-		const QUuid id = m_model->addPreliminary(values);
+		const QVariantHash values = defaultValues();
+		const QUuid id = values.value("id").toUuid();
+		m_changeTrackingList->add(values);
+
 		const QModelIndex index = m_model->indexForId(id);
 		if (m_selector->inherits("QComboBox")) {
 			qobject_cast<QComboBox *>(m_selector)->setCurrentIndex(index.row());
@@ -227,7 +238,7 @@ void SyncedWidgetsGroup::registerRemoveButton(QPushButton *btn)
 	connect(btn, &QPushButton::clicked, this, [this]()
 	{
 		if (!m_id.isNull()) {
-			m_model->removePreliminary(m_id);
+			m_changeTrackingList->remove(m_id);
 		}
 	});
 	connect(this, &SyncedWidgetsGroup::idChanged, btn, [btn](const QUuid &id) { btn->setEnabled(!id.isNull()); });
@@ -238,13 +249,82 @@ void SyncedWidgetsGroup::registerCopyButton(QPushButton *btn)
 	connect(btn, &QPushButton::clicked, this, [this]()
 	{
 		if (!m_id.isNull()) {
-			QVariantHash values = m_model->getAll(m_id);
-			values["id"] = QUuid::createUuid();
-			m_model->addPreliminary(values);
+			const QVariantHash values = JD::Util::mergeAssociative(m_changeTrackingList->get(m_id), defaultValues());
+			const QUuid id = values.value("id").toUuid();
+			m_changeTrackingList->add(values);
+
+			const QModelIndex index = m_model->indexForId(id);
+			if (m_selector->inherits("QComboBox")) {
+				qobject_cast<QComboBox *>(m_selector)->setCurrentIndex(index.row());
+			} else if (m_selector->inherits("QAbstractItemView")) {
+				qobject_cast<QAbstractItemView *>(m_selector)->setCurrentIndex(index);
+			}
 		}
 	});
 	connect(this, &SyncedWidgetsGroup::idChanged, btn, [btn](const QUuid &id) { btn->setEnabled(!id.isNull()); });
 	btn->setEnabled(!m_id.isNull());
+}
+void SyncedWidgetsGroup::registerMoveButtons(QPushButton *up, QPushButton *down, const QString &property)
+{
+	m_orderProperty = property;
+	connect(up, &QPushButton::clicked, this, [this]()
+	{
+		if (m_id.isNull()) {
+			return;
+		}
+		const QVariantHash current = m_changeTrackingList->get(m_id);
+
+		// get all others in same context and sort them
+		QVector<QVariantHash> others = m_changeTrackingList->get(Filter(QVector<FilterPart>()
+																		<< FilterPart(m_parentPropertySelector, FilterPart::Equal, current.value(m_parentPropertySelector)) // same context
+																		<< FilterPart("id", FilterPart::Equal, current.value("id"), true), // only others
+																		QVector<FilterGroup>()));
+		std::sort(others.begin(), others.end(), [this](const QVariantHash &a, const QVariantHash &b)
+		{
+			return a.value(m_orderProperty) < b.value(m_orderProperty);
+		});
+
+		// find our the higher element, and swap with it
+		for (int i = 0; i < others.size(); ++i) {
+			if (others.at(i).value(m_orderProperty) > current.value(m_orderProperty)) {
+				m_changeTrackingList->set(m_id, m_orderProperty, others.at(i).value(m_orderProperty));
+				m_changeTrackingList->set(others.at(i).value("id").toUuid(), m_orderProperty, current.value(m_orderProperty));
+				break;
+			}
+		}
+	});
+	connect(down, &QPushButton::clicked, this, [this]()
+	{
+		if (m_id.isNull()) {
+			return;
+		}
+		const QVariantHash current = m_changeTrackingList->get(m_id);
+
+		// get all others in same context and sort them
+		QVector<QVariantHash> others = m_changeTrackingList->get(Filter(QVector<FilterPart>()
+																		<< FilterPart(m_parentPropertySelector, FilterPart::Equal, current.value(m_parentPropertySelector)) // same context
+																		<< FilterPart("id", FilterPart::Equal, current.value("id"), true), // only others
+																		QVector<FilterGroup>()));
+		std::sort(others.begin(), others.end(), [this](const QVariantHash &a, const QVariantHash &b)
+		{
+			return a.value(m_orderProperty) < b.value(m_orderProperty);
+		});
+
+		// find our the lower element, and swap with it
+		for (int i = others.size()-1; i >= 0; --i) {
+			if (others.at(i).value(m_orderProperty) < current.value(m_orderProperty)) {
+				m_changeTrackingList->set(m_id, m_orderProperty, others.at(i).value(m_orderProperty));
+				m_changeTrackingList->set(others.at(i).value("id").toUuid(), m_orderProperty, current.value(m_orderProperty));
+				break;
+			}
+		}
+	});
+
+	// TODO: disable button if at top or at bottom
+	connect(this, &SyncedWidgetsGroup::idChanged, up, [up](const QUuid &id) { up->setEnabled(!id.isNull()); });
+	connect(this, &SyncedWidgetsGroup::idChanged, down, [down](const QUuid &id) { down->setEnabled(!id.isNull()); });
+	up->setEnabled(!m_id.isNull());
+	down->setEnabled(!m_id.isNull());
 }
 
 void SyncedWidgetsGroup::setSelector(const QString &otherProperty, QComboBox *box)
@@ -263,7 +343,8 @@ void SyncedWidgetsGroup::setSelector(const QString &otherProperty, QAbstractItem
 }
 void SyncedWidgetsGroup::setSelector(const QUuid &id)
 {
-	m_model->setFilter(Filter(FilterPart("id", FilterPart::Equal, id)));
+	m_filteredList->setFilter(Filter(FilterPart("id", FilterPart::Equal, id)));
+	m_list->setFocus(m_filteredList->filter());
 	setId(id);
 }
 
@@ -335,7 +416,7 @@ void SyncedWidgetsGroup::setEnabled(const bool enabled)
 
 bool SyncedWidgetsGroup::isModified() const
 {
-	if (m_model->isModified()) {
+	if (m_changeTrackingList->isModified()) {
 		return true;
 	}
 	for (SyncedWidgetsGroup *subgroup : m_subgroups) {
@@ -346,25 +427,57 @@ bool SyncedWidgetsGroup::isModified() const
 	return false;
 }
 
+class SortedRecordModel : public QSortFilterProxyModel
+{
+	QString m_property;
+public:
+	explicit SortedRecordModel(const QString &property, QObject *parent = nullptr)
+		: QSortFilterProxyModel(parent), m_property(property) {}
+
+private:
+	bool lessThan(const QModelIndex &sourceLeft, const QModelIndex &sourceRight) const override
+	{
+		const QVariantHash dataLeft = sourceLeft.data(RecordListModel::AllDataRole).toHash();
+		const QVariantHash dataRight = sourceRight.data(RecordListModel::AllDataRole).toHash();
+		return dataLeft.value(m_property) < dataRight.value(m_property);
+	}
+};
+void SyncedWidgetsGroup::sortSelector(const QString &property)
+{
+	injectProxyModel(new SortedRecordModel(property, this));
+}
+
+void SyncedWidgetsGroup::injectProxyModel(QAbstractProxyModel *proxy)
+{
+	if (!m_selector) {
+		return;
+	}
+
+	proxy->setParent(this);
+	if (QComboBox *box = qobject_cast<QComboBox *>(m_selector)) {
+		proxy->setSourceModel(box->model());
+		box->setModel(proxy);
+	} else if (QAbstractItemView *view = qobject_cast<QAbstractItemView *>(m_selector)) {
+		proxy->setSourceModel(view->model());
+		view->setModel(proxy);
+	}
+}
+
 void SyncedWidgetsGroup::discard()
 {
-	m_model->discardPreliminaries();
+	m_changeTrackingList->discard();
 
 	for (SyncedWidgetsGroup *subgroup : m_subgroups) {
 		subgroup->discard();
 	}
-
-	emit discarded();
 }
 void SyncedWidgetsGroup::commit()
 {
-	m_model->commitPreliminaries();
-
-	for (SyncedWidgetsGroup *subgroup : m_subgroups) {
-		subgroup->commit();
+	try {
+		commitInternal();
+	} catch (Exception &e) {
+		QMessageBox::critical(qobject_cast<QWidget *>(parent()), tr("Commit failed"), tr("Committing changes failed: %1").arg(e.cause()));
 	}
-
-	emit committed();
 }
 
 void SyncedWidgetsGroup::setId(const QUuid &id)
@@ -375,9 +488,9 @@ void SyncedWidgetsGroup::setId(const QUuid &id)
 	m_id = id;
 
 	if (!m_id.isNull()) {
-		if (m_list->contains(id) || m_model->isPreliminaryAddition(id)) {
+		if (m_changeTrackingList->contains(id) || m_changeTrackingList->isAddition(id)) {
 			for (SyncedWidgetsGroupEntry *entry : m_entries) {
-				entry->setValue(m_model->data(id, entry->m_property));
+				entry->setValue(m_changeTrackingList->get(id, entry->m_property));
 			}
 		} else {
 			m_list->fetchOnce(Filter(FilterPart("id", FilterPart::Equal, id)));
@@ -396,7 +509,8 @@ void SyncedWidgetsGroup::setId(const QUuid &id)
 void SyncedWidgetsGroup::setParentId(const QUuid &id)
 {
 	m_parentId = id;
-	m_model->setFilter(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, id)));
+	m_filteredList->setFilter(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, id)));
+	m_list->setFocus(m_filteredList->filter());
 }
 
 void SyncedWidgetsGroup::recordAdded(const QUuid &id)
@@ -419,7 +533,7 @@ void SyncedWidgetsGroup::recordChanged(const QUuid &id, const QString &property)
 	if (id == m_id) {
 		for (SyncedWidgetsGroupEntry *entry : m_entries) {
 			if (entry->m_property == property) {
-				entry->setValue(m_model->data(m_id, property));
+				entry->setValue(m_changeTrackingList->get(m_id, property));
 			}
 		}
 	}
@@ -427,5 +541,29 @@ void SyncedWidgetsGroup::recordChanged(const QUuid &id, const QString &property)
 
 void SyncedWidgetsGroup::edited(SyncedWidgetsGroupEntry *entry)
 {
-	m_model->setData(m_id, entry->m_property, entry->value());
+	m_changeTrackingList->set(m_id, entry->m_property, entry->value());
+}
+
+void SyncedWidgetsGroup::commitInternal()
+{
+	m_changeTrackingList->commit();
+
+	for (SyncedWidgetsGroup *subgroup : m_subgroups) {
+		subgroup->commitInternal();
+	}
+}
+
+QVariantHash SyncedWidgetsGroup::defaultValues() const
+{
+	QVariantHash values;
+	values.insert("id", QUuid::createUuid());
+	if (!m_parentId.isNull()) {
+		values.insert(m_parentPropertySelector, m_parentId);
+	}
+	if (!m_orderProperty.isNull()) {
+		const QVector<QVariantHash> existing = m_changeTrackingList->get(Filter(FilterPart(m_parentPropertySelector, FilterPart::Equal, m_parentId)));
+		const QVariant max = JD::Util::Functional::collection(existing).map([this](const QVariantHash &hash) { return hash.value(m_orderProperty); }).max();
+		values.insert(m_orderProperty, max);
+	}
+	return values;
 }

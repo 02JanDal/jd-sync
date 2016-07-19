@@ -8,6 +8,7 @@
 #include <memory>
 
 class TimeoutTimer;
+class RequestWaiter;
 
 class Request : public AbstractActor
 {
@@ -22,11 +23,14 @@ public:
 	Request &then(const Callback<Message> &func);
 	Request &error(const Callback<ErrorMessage> &func);
 	Request &timeout(const Callback<> &func);
+	Request &throwOnError();
 
 	Request &setTimeout(const int secs, const int retries = 0);
 	Request &deleteOnFinished();
 
 	Request &send();
+
+	void sendAndWait();
 
 	static Request &create(MessageHub *hub, const Message &msg);
 
@@ -42,6 +46,10 @@ private:
 	int m_retriesOnTimeout = 0;
 	bool m_deleteOnFinish = false;
 	TimeoutTimer *m_timer = nullptr;
+	bool m_done = false;
+
+	friend class RequestWaiter;
+	RequestWaiter *m_waiter = nullptr;
 
 	void receive(const Message &message) override;
 	void reset() override;

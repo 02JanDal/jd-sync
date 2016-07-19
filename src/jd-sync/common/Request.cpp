@@ -2,6 +2,10 @@
 
 #include <QTimer>
 
+#include <jd-util/Exception.h>
+
+#include "RequestWaiter.h"
+
 class TimeoutTimer : public QTimer
 {
 public:
@@ -17,10 +21,20 @@ public:
 					request->m_timeout();
 				}
 				request->send();
-			} else if (request->m_error) {
-				request->m_error(ErrorMessage(request->m_message.channel(), "Timeout"));
-			} else if (request->m_then) {
-				request->m_error(ErrorMessage(request->m_message.channel(), "Timeout"));
+			} else {
+				if (request->m_error) {
+					request->m_error(ErrorMessage(request->m_message.channel(), "Timeout"));
+				} else if (request->m_then) {
+					request->m_error(ErrorMessage(request->m_message.channel(), "Timeout"));
+				}
+				if (request->m_waiter) {
+					request->m_waiter->notifyDone(request);
+				}
+				if (request->m_deleteOnFinish) {
+					QTimer::singleShot(0, Qt::CoarseTimer, [request]() { delete request; });
+					delete request;
+				}
+				request->m_done = true;
 			}
 		});
 		setInterval(request->m_timeoutSecs * 1000);
@@ -36,6 +50,9 @@ Request::~Request()
 {
 	if (m_timer) {
 		delete m_timer;
+	}
+	if (m_waiter) {
+		m_waiter->notifyDone(this);
 	}
 }
 
@@ -53,6 +70,13 @@ Request &Request::timeout(const Callback<> &func)
 {
 	m_timeout = func;
 	return *this;
+}
+Request &Request::throwOnError()
+{
+	return error([](const ErrorMessage &msg)
+	{
+		throw Exception(msg.errorString());
+	});
 }
 Request &Request::setTimeout(const int secs, const int retries)
 {
@@ -83,6 +107,14 @@ Request &Request::send()
 	return *this;
 }
 
+void Request::sendAndWait()
+{
+	send();
+	if (!m_done) {
+		RequestWaiter::wait(this);
+	}
+}
+
 Request &Request::create(MessageHub *hub, const Message &msg)
 {
 	return (new Request(hub, msg))->deleteOnFinished();
@@ -99,15 +131,30 @@ void Request::receive(const Message &message)
 		m_timer = nullptr;
 	}
 
-	if (message.command() == "error" && m_error) {
-		m_error(message.toError());
-	} else if (m_then) {
-		m_then(message);
+	std::exception_ptr exception;
+	try {
+		if (message.command() == "error" && m_error) {
+			m_error(message.toError());
+		} else if (m_then) {
+			m_then(message);
+		}
+	} catch (...) {
+		exception = std::current_exception();
 	}
+
 	unsubscribeFrom(m_message.channel());
 
+	if (m_waiter && !exception) {
+		m_waiter->notifyDone(this);
+	}
 	if (m_deleteOnFinish) {
-		delete this;
+		QTimer::singleShot(0, Qt::CoarseTimer, [this]() { delete this; });
+	}
+
+	m_done = true;
+
+	if (m_waiter && exception) {
+		m_waiter->notifyException(exception);
 	}
 }
 

@@ -157,6 +157,15 @@ QString FilterPart::toSql(QVector<QPair<QString, QVariant> > *parameters) const
 	return sql;
 }
 
+bool FilterPart::operator==(const FilterPart &other) const
+{
+	return m_property == other.m_property && m_value == other.m_value && m_operation == other.m_operation && m_negated == other.m_negated;
+}
+bool FilterPart::operator!=(const FilterPart &other) const
+{
+	return m_property != other.m_property || m_value != other.m_value || m_operation != other.m_operation || m_negated != other.m_negated;
+}
+
 FilterGroup::FilterGroup(const QVector<FilterPart> &parts, const QVector<FilterGroup> &groups, const FilterGroup::Op op, const bool negated)
 	: m_parts(parts), m_groups(groups), m_operation(op), m_negated(negated) {}
 
@@ -218,6 +227,15 @@ QString FilterGroup::toSql(QVector<QPair<QString, QVariant>> *parameters) const
 	const QVector<QString> parts = Functional::map(m_parts, [parameters](const FilterPart &part) { return part.toSql(parameters); });
 	const QVector<QString> groups = Functional::map(m_groups, [parameters](const FilterGroup &group) { return group.toSql(parameters); });
 	return negation + '(' + Functional::collection(parts + groups).join(joiner) + ')';
+}
+
+bool FilterGroup::operator==(const FilterGroup &other) const
+{
+	return m_parts == other.m_parts && m_groups == other.m_groups && m_operation == other.m_operation && m_negated == other.m_negated;
+}
+bool FilterGroup::operator!=(const FilterGroup &other) const
+{
+	return m_parts != other.m_parts || m_groups != other.m_groups || m_operation != other.m_operation || m_negated != other.m_negated;
 }
 
 Filter::Filter(const QVector<FilterPart> &parts, const QVector<FilterGroup> &groups, const FilterGroup::Op op, const bool negated)

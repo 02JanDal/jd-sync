@@ -1,6 +1,15 @@
 set(SRC_CLIENT
-	SyncedList.h
-	SyncedList.cpp
+	lists/AbstractRecordList.h
+	lists/AbstractRecordList.cpp
+	lists/SyncedList.h
+	lists/SyncedList.cpp
+	lists/ChangeTrackingList.h
+	lists/ChangeTrackingList.cpp
+	lists/FilteredList.h
+	lists/FilteredList.cpp
+	lists/RecordListModel.h
+	lists/RecordListModel.cpp
+
 	TcpClientActor.h
 	TcpClientActor.cpp
 
@@ -19,3 +28,5 @@ target_include_directories(jd-sync-client PUBLIC
 )
 
 install(TARGETS jd-sync-client EXPORT jd-sync DESTINATION lib)
+
+cppcheck_target(jd-sync-client)

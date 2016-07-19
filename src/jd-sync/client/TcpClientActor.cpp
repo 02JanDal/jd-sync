@@ -92,7 +92,7 @@ void TcpClientActor::socketChangedState()
 			sendToExternal(Message("client.auth", "attempt", QJsonObject({{"token", m_authentication}})).setFlags(Message::BypassAuth));
 		} else {
 			emit message(tr("Connected!"));
-			qCDebug(Tcp) << "Connection and authentication successfull";
+			qCInfo(Tcp) << "Connection and authentication successfull";
 			if (m_state == Connecting) {
 				m_state = Connected;
 				emit connected();
@@ -136,7 +136,7 @@ void TcpClientActor::socketDataReady()
 						m_needAuthentication = false;
 
 						emit message(tr("Connected!"));
-						qCDebug(Tcp) << "Connection and authentication successfull";
+						qCInfo(Tcp) << "Connection and authentication successfull";
 						m_state = Connected;
 						emit connected();
 						sendQueue(&m_messagesQueue);

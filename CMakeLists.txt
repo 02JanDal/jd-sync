@@ -40,5 +40,7 @@ add_subdirectory(src/jd-sync/gui)
 install(DIRECTORY src/ DESTINATION include FILES_MATCHING PATTERN "*.h")
 install(EXPORT jd-sync NAMESPACE jd_ DESTINATION lib/cmake)
 
+add_custom_target(cppcheck_jd-sync DEPENDS cppcheck_jd-sync-common cppcheck_jd-sync-server cppcheck_jd-sync-client cppcheck_jd-sync-gui)
+
 enable_testing()
 add_subdirectory(test)

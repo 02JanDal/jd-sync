@@ -14,7 +14,6 @@ class TcpClientActor final : public AbstractExternalActor
 public:
 	explicit TcpClientActor(MessageHub *hub, const QString &host, const quint16 port, QObject *parent = nullptr);
 
-
 	enum State
 	{
 		Waiting,

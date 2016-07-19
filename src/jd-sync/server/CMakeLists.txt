@@ -37,3 +37,5 @@ target_include_directories(jd-sync-server PUBLIC
 )
 
 install(TARGETS jd-sync-server EXPORT jd-sync DESTINATION lib)
+
+cppcheck_target(jd-sync-server)

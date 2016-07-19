@@ -4,7 +4,9 @@
 #include <QUuid>
 
 class SyncedList;
-class SyncedListModel;
+class FilteredList;
+class ChangeTrackingList;
+class RecordListModel;
 class SyncedWidgetsGroupEntry;
 class Filter;
 
@@ -18,6 +20,7 @@ class QAbstractItemView;
 class QPushButton;
 class QLabel;
 class QGroupBox;
+class QAbstractProxyModel;
 
 class SyncedWidgetsGroup : public QObject
 {
@@ -32,6 +35,7 @@ public:
 	void registerAddButton(QPushButton *btn);
 	void registerRemoveButton(QPushButton *btn);
 	void registerCopyButton(QPushButton *btn);
+	void registerMoveButtons(QPushButton *up, QPushButton *down, const QString &property);
 
 	void setSelector(const QString &otherProperty, QComboBox *box);
 	void setSelector(const QString &otherProperty, QAbstractItemView *view);
@@ -53,14 +57,13 @@ public:
 	bool isModified() const;
 	QUuid id() const { return m_id; }
 
-	SyncedListModel *model() const { return m_model; }
+	RecordListModel *model() const { return m_model; }
+	void sortSelector(const QString &property);
+	void injectProxyModel(QAbstractProxyModel *proxy);
 
 signals:
 	void modifiedChanged(const bool modified);
 	void idChanged(const QUuid &id);
-
-	void discarded();
-	void committed();
 
 public slots:
 	void discard();
@@ -76,7 +79,9 @@ private slots:
 
 private:
 	SyncedList *m_list;
-	SyncedListModel *m_model;
+	FilteredList *m_filteredList;
+	ChangeTrackingList *m_changeTrackingList;
+	RecordListModel *m_model;
 	QUuid m_id;
 
 	// either m_selector or m_id should be used
@@ -84,10 +89,17 @@ private:
 	QString m_parentPropertySelector;
 	QUuid m_parentId;
 
+	QString m_orderProperty;
+
 	friend class SyncedWidgetsGroupEntry;
 	void edited(SyncedWidgetsGroupEntry *entry);
 
 	QVector<SyncedWidgetsGroupEntry *> m_entries;
 	QVector<SyncedWidgetsGroup *> m_subgroups;
 	QVector<QWidget *> m_others;
+
+	void commitInternal();
+
+	// for new records
+	QVariantHash defaultValues() const;
 };
